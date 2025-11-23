@@ -84,23 +84,18 @@ Une plateforme web accessible 24/7 qui permet d'**anticiper** les coupures pour 
 <summary>📸 Cliquez pour voir les captures d'écran</summary>
 
 #### Prédiction Immédiate
-![Prédiction](docs/screenshots/prediction.png)
+![Prédiction](screenshots/prediction_immediate.png)
 
 #### Carte Interactive
-![Carte](docs/screenshots/carte.png)
+![Carte](screenshots/carte_des_risques.png)
 
 #### Analyse par Quartier
-![Analyse](docs/screenshots/analyse.png)
+![Analyse](screenshots/analyse_par_quartier.png)
 
 #### Historique
-![Historique](docs/screenshots/historique.png)
+![Historique](screenshots/historique_des_tendences.png)
 
 </details>
-
-### Vidéo Démo
-🎥 **[Lien vers la vidéo YouTube]** *(5 minutes)*
-
----
 
 ## 🏗️ Architecture
 
@@ -557,6 +552,7 @@ Si vous utilisez ce projet dans votre recherche, veuillez citer :
 [⬆ Retour en haut](#-dakar-power-prediction)
 
 </div>
+
 
 
 
