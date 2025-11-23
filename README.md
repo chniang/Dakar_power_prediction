@@ -506,22 +506,12 @@ of this software and associated documentation files...
 
 ## 📧 Contact
 
-**Développeur** :Cheikh Niang 
-**Email** :cheikhniang159@gmail.com 
+**Développeur** :(Cheikh Niang) 
+**Email** :(cheikhniang159@gmail.com)
 **LinkedIn** :(https://www.linkedin.com/in/cheikh-niang-5370091b5/)  
 **GitHub** :(https://github.com/dashboard)
 
 **Lien du Projet** :(https://github.com/chniang/Dakar_power_prediction)
-
----
-
-## 🙏 Remerciements
-
-- **Streamlit** - Framework d'interface incroyable
-- **LightGBM** - Algorithme ML performant
-- **TensorFlow** - Bibliothèque Deep Learning
-- **Plotly** - Visualisations interactives
-- **Claude (Anthropic)** - Assistant IA pour la documentation
 
 ---
 
@@ -564,6 +554,7 @@ Si vous utilisez ce projet dans votre recherche, veuillez citer :
 [⬆ Retour en haut](#-dakar-power-prediction)
 
 </div>
+
 
 
 
