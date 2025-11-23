@@ -509,7 +509,7 @@ of this software and associated documentation files...
 **Développeur** : [Votre Nom]  
 **Email** : votre.email@example.com  
 **LinkedIn** : [linkedin.com/in/votre-profil](https://www.linkedin.com/in/cheikh-niang-5370091b5/)  
-**GitHub** : [@votre-username](https://github.com/votre-username)
+**GitHub** : [@votre-username](https://github.com/dashboard)
 
 **Lien du Projet** : [https://github.com/votre-username/dakar-power-prediction](https://github.com/votre-username/dakar-power-prediction)
 
@@ -564,4 +564,5 @@ Si vous utilisez ce projet dans votre recherche, veuillez citer :
 [⬆ Retour en haut](#-dakar-power-prediction)
 
 </div>
+
 
