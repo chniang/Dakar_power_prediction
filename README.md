@@ -502,7 +502,7 @@ pytest tests/test_data_pipeline.py -v
 
 ## 📚 Ressources Supplémentaires
 
-- 📖 [Documentation Technique Complète](RAPPORT FINAL DE PROJET.md)
+- 📖 [Documentation Technique Complète](RAPPORT_FINAL_DE_PROJET.md)
 - 🌐 [Application Déployée](a venir)
 
 ---
@@ -537,3 +537,4 @@ Si vous utilisez ce projet dans votre recherche, veuillez citer :
 [⬆ Retour en haut](#-dakar-power-prediction)
 
 </div>
+
