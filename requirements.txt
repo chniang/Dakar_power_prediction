@@ -1,0 +1,37 @@
+# ====================================
+# DAKAR POWER PREDICTION - DEPENDENCIES
+# ====================================
+
+# Core Data Science
+pandas==2.1.4
+numpy==1.26.2
+scikit-learn==1.3.2
+
+# Machine Learning
+lightgbm==4.1.0
+imbalanced-learn==0.11.0
+
+# Deep Learning
+tensorflow==2.15.0
+
+# Visualization
+plotly==5.18.0
+matplotlib==3.8.2
+seaborn==0.13.0
+
+# Web Application
+streamlit==1.29.0
+
+# Database (Future)
+sqlalchemy==2.0.23
+pymysql==1.1.0  # MySQL connector
+cryptography==41.0.7  # Pour MySQL
+
+# Utilities
+python-dotenv==1.0.0
+joblib==1.3.2
+tqdm==4.66.1
+
+# Development
+jupyter==1.0.0
+ipykernel==6.27.1

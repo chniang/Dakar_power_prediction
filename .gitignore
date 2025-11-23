@@ -1,0 +1,41 @@
+# Environnement virtuel
+stable_env/
+venv/
+.env/
+
+# Données brutes et sensibles
+data/raw/*
+data/*.db
+
+# Données dérivées
+data/processed/*
+
+# Modèles entraînés
+models/*
+!models/.gitkeep
+
+# Résultats d'évaluation
+evaluation_results/*
+
+# Cache et fichiers système
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Streamlit cache
+.streamlit/
+
+# Sauvegardes
+*.backup
+
+# Fichiers temporaires
+*.tmp
+*.log
+
+# PDFs ou documents lourds
+*.pdf
+
+# Rapports
+📊 RAPPORT FINAL DE PROJET.md
+📘 DOCUMENTATION CONCISE - DAKAR POWER PREDICTION.pdf
