@@ -24,7 +24,6 @@
 - [Technologies](#-technologies)
 - [Roadmap](#-roadmap)
 - [Contribution](#-contribution)
-- [Licence](#-licence)
 - [Contact](#-contact)
 
 ---
@@ -310,53 +309,56 @@ Coupure   │ FN: 318     │ TP: 251│
 
 ```
 dakar_power_prediction/
+├── data/
+│   ├── processed/
+│   │   └── processed_data.csv
+│   ├── raw/
+│   │   └── raw_data.csv
+│   └── dakar_power.db
 │
-├── data/                          # Données
-│   ├── raw/                       # CSV brut
-│   │   └── power_outages.csv
-│   └── power_outages.db           # Base de données
-│
-├── models/                        # Modèles entraînés
-│   ├── lgbm_model.joblib          # LightGBM
-│   ├── lstm_model.h5              # LSTM
-│   ├── scaler.joblib              # Normalisateur
-│   ├── encoders.joblib            # Encodeurs
-│   └── lstm_threshold.txt         # Seuil LSTM
-│
-├── src/                           # Code source
-│   ├── __init__.py
-│   ├── config.py                  # Configuration
-│   ├── data_pipeline.py           # Pipeline données
-│   ├── data_generator.py          # Générateur
-│   └── database.py                # Gestion BD
-│
-├── scripts/                       # Scripts d'exécution
-│   ├── 1_generate_data.py         # Génération
-│   ├── 2_train_models.py          # Entraînement
-│   └── 3_evaluate_models.py       # Évaluation
-│
-├── streamlit_app/                 # Application web
-│   ├── app.py                     # Interface principale
-│   └── utils.py                   # Fonctions utilitaires
-│
-├── evaluation_results/            # Rapports d'évaluation
+├── evaluation_results/
 │   ├── confusion_matrices.png
-│   ├── roc_curves.png
-│   ├── precision_recall_curves.png
-│   └── evaluation_report_*.txt
+│   └── evaluation_report_20251118_123625.txt
 │
-├── docs/                          # Documentation
-│   ├── screenshots/               # Captures d'écran
-│   └── rapport_final.md           # Rapport technique
+├── models/
+│   ├── encoders.pkl
+│   ├── lgbm_model.pkl
+│   ├── lstm_model.keras
+│   ├── lstm_threshold.txt
+│   └── scaler.pkl
 │
-├── tests/                         # Tests unitaires
-│   └── test_*.py
+├── screenshots/
+│   ├── analyse_par_quartier.png
+│   ├── carte_des_risques.png
+│   ├── historique_des_tendences.png
+│   └── prediction_immediate.png
 │
-├── .gitignore                     # Fichiers ignorés
-├── requirements.txt               # Dépendances Python
-├── Dockerfile                     # Configuration Docker
-├── README.md                      # Ce fichier
-└── LICENSE                        # Licence MIT
+├── scripts/
+│   ├── 1_generate_data.py
+│   ├── 2_train_models.py
+│   └── 3_evaluate_models.py
+│
+├── src/
+│   ├── config.py             
+│   ├── database.py
+│   ├── data_generator.py
+│   ├── data_pipeline.py
+│   ├── data_pipeline.py.backup
+│   ├── model_trainer.py
+│   ├── model_trainer.py.backup
+│   └── __init__.py
+│
+├── streamlit_app/
+│   ├── pages/
+│   ├── app.py
+│   ├── config.py             
+│   └── utils.py
+│
+├── .gitignore
+├── README.md
+├── requirements.txt
+├── 📊 RAPPORT FINAL DE PROJET.md
+└── 📘 DOCUMENTATION CONCISE - DAKAR POWER PREDICTION.pdf    
 ```
 
 ---
@@ -515,10 +517,8 @@ of this software and associated documentation files...
 
 ## 📚 Ressources Supplémentaires
 
-- 📖 [Documentation Technique Complète](docs/rapport_final.md)
-- 🎥 [Vidéo Tutoriel](lien-youtube)
-- 📊 [Slides de Présentation](lien-slides)
-- 🌐 [Application Déployée](lien-app)
+- 📖 [Documentation Technique Complète](📊 RAPPORT FINAL DE PROJET.md)
+- 🌐 [Application Déployée](a venir)
 
 ---
 
@@ -552,6 +552,7 @@ Si vous utilisez ce projet dans votre recherche, veuillez citer :
 [⬆ Retour en haut](#-dakar-power-prediction)
 
 </div>
+
 
 
 
