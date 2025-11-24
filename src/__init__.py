@@ -5,7 +5,7 @@ DATABASE_TYPE = 'mysql'  # ← Changer de 'sqlite' à 'mysql'
 MYSQL_CONFIG = {
     'host': 'localhost',
     'port': 3306,
-    'database': 'historique_dakar',  # ← TON NOM DE BD
+    'database': 'dakar_predictions',  # ← TON NOM DE BD
     'user': 'root',
     'password': '',  # ← Pas de mot de passe
     'charset': 'utf8mb4'
