@@ -3,10 +3,10 @@ DATABASE_TYPE = 'mysql'  # ← Changer de 'sqlite' à 'mysql'
 
 # MySQL (pour production)
 MYSQL_CONFIG = {
-    'host': 'localhost',
-    'port': 3306,
-    'database': 'dakar_predictions',  # ← TON NOM DE BD
+    'host': 'localhost',           # Serveur local (ou IP distante)
+    'port': 3306,                  # Port par défaut MySQL
+    'database': 'dakar_predictions',
     'user': 'root',
-    'password': '',  # ← Pas de mot de passe
-    'charset': 'utf8mb4'
+    'password': '',                # ← Vide en dev (à sécuriser en prod !)
+    'charset': 'utf8mb4'           # Encodage UTF-8 complet
 }
