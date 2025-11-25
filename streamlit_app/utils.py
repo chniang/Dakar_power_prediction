@@ -55,7 +55,7 @@ from src.database import DatabaseManager
 # ============================================================================
 
 @st.cache_resource
-def load_models():
+def load_models(version=1.1):
     """
     Charge les modèles ML, scaler et encodeur (UNE SEULE FOIS).
     
