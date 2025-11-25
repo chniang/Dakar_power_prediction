@@ -83,7 +83,7 @@ def load_models():
     
     Returns:
         tuple: (lgbm_model, lgbm_threshold, lstm_model, lstm_threshold, 
-                scaler, label_encoder) ou (None, ..., None) si erreur
+                 scaler, label_encoder) ou (None, ..., None) si erreur
     """
     try:
         # === CHARGEMENT LIGHTGBM ===
@@ -95,6 +95,7 @@ def load_models():
         # === CHARGEMENT LSTM ===
         # LSTM est sauvegardé avec Keras (format HDF5)
         # compile=False : Pas besoin de recompiler (on fait juste des prédictions)
+        # Cette ligne a résolu l'erreur 'Unrecognized keyword arguments: [batch_shape]'
         lstm_model = tf.keras.models.load_model(LSTM_MODEL_FILE, compile=False)
         
         # Le seuil LSTM est dans un fichier texte séparé
@@ -116,6 +117,7 @@ def load_models():
     except Exception as e:
         # Afficher l'erreur dans l'interface Streamlit (zone rouge)
         st.error(f"❌ Erreur lors du chargement des modèles : {e}")
+        # Retourner None pour tous les éléments pour que la fonction de prédiction puisse le gérer
         return None, None, None, None, None, None
 
 
@@ -133,7 +135,7 @@ def get_database():
     Si la BD n'est pas disponible (fichier manquant, corruption), 
     l'application continue de fonctionner SANS historique.
     
-    ALTERNATIVE SI BD INDISPONIBLE :
+    ALTERNATIVES SI BD INDISPONIBLE :
     - Prédictions en temps réel : ✅ Fonctionnent
     - Historique : ❌ Non disponible
     - Statistiques : ❌ Non disponibles
@@ -157,8 +159,8 @@ def get_database():
 # ============================================================================
 
 def make_prediction_single(input_data, quartier, lgbm_model, lgbm_threshold, 
-                             lstm_model, lstm_threshold, scaler, label_encoder,
-                             historical_data=None):
+                           lstm_model, lstm_threshold, scaler, label_encoder,
+                           historical_data=None):
     """
     Effectue une prédiction pour une seule entrée utilisateur.
     
@@ -186,10 +188,10 @@ def make_prediction_single(input_data, quartier, lgbm_model, lgbm_threshold,
     Args:
         input_data (dict): Données saisies par l'utilisateur
             {
-                'temperature': float,   # °C
-                'humidite': float,      # %
-                'vent': float,          # km/h
-                'consommation': float   # MW
+                'temperature': float,    # °C
+                'humidite': float,       # %
+                'vent': float,           # km/h
+                'consommation': float    # MW
             }
         quartier (str): Nom du quartier (ex: "Dakar-Plateau")
         lgbm_model: Modèle LightGBM chargé
@@ -216,6 +218,18 @@ def make_prediction_single(input_data, quartier, lgbm_model, lgbm_threshold,
                 'lstm_utilisable': bool     # LSTM a pu prédire ?
             }
     """
+    
+    # 💥 MODIFICATION CLÉ POUR ÉVITER L'AttributeError (Ligne 259)
+    # Vérifie si un composant essentiel (modèle, scaler ou encodeur) a échoué 
+    # au chargement et est à None.
+    if scaler is None or lgbm_model is None or lstm_model is None or label_encoder is None:
+        print("🔴 DEBUG: Un modèle, un scaler ou un encodeur est None. Abandon de la prédiction.")
+        return {
+            'proba_lgbm': 0.0, 'pred_lgbm': 0, 'proba_lstm': 0.0, 'pred_lstm': 0, 
+            'proba_moyenne': 0.0, 'statut': "Erreur Critique", 'color': "red", 
+            'emoji': "❌", 'seuil_lgbm': 0.0, 'seuil_lstm': 0.0, 'lstm_utilisable': False
+        }
+    # 💥 FIN DE LA MODIFICATION
     
     # 1. Créer le DataFrame d'entrée
     df_input = pd.DataFrame([{
@@ -367,7 +381,7 @@ def get_historical_data(db, quartier=None, hours=168):
     """
     Récupère les données historiques depuis la BD
     
-    USAGE TYPIQUE :
+    USAGETYPE :
     - Afficher l'historique des coupures (graphiques)
     - Fournir des données pour LSTM (besoin de séquence temporelle)
     - Calculer des statistiques (taux de coupures récent)
@@ -570,7 +584,7 @@ def get_quartier_coords():
         ...
     }
     
-    USAGE :
+    USAGETYPE :
     Afficher les quartiers sur une carte Streamlit
     
     Returns:
@@ -583,7 +597,7 @@ def get_quartier_list():
     """
     Retourne la liste des quartiers
     
-    USAGE :
+    USAGETYPE :
     - Populate un selectbox Streamlit
     - Valider un nom de quartier
     
@@ -636,142 +650,144 @@ def save_prediction_to_db(db, prediction_data):
 📚 CONCEPTS CLÉS À RETENIR :
 
 1. ARCHITECTURE MODULAIRE (SEPARATION OF CONCERNS)
-   ------------------------------------------------
-   Ce fichier utils.py sépare la LOGIQUE MÉTIER de l'INTERFACE UTILISATEUR.
-   
-   Principe :
-   ❌ MAUVAIS : Tout dans app.py (1000+ lignes, illisible)
-   ✅ BON : Logique dans utils.py, UI dans app.py
-   
-   Avantages :
-   - Code réutilisable (fonctions appelées partout)
-   - Tests faciles (chaque fonction testable indépendamment)
-   - Maintenance simple (1 bug = 1 fonction à corriger)
-   - Collaboration facilitée (plusieurs développeurs)
+    ------------------------------------------------
+    Ce fichier utils.py sépare la LOGIQUE MÉTIER de l'INTERFACE UTILISATEUR.
+    
+    Principe :
+    ❌ MAUVAIS : Tout dans app.py (1000+ lignes, illisible)
+    ✅ BON : Logique dans utils.py, UI dans app.py
+    
+    Avantages :
+    - Code réutilisable (fonctions appelées partout)
+    - Tests faciles (chaque fonction testable indépendamment)
+    - Maintenance simple (1 bug = 1 fonction à corriger)
+    - Collaboration facilitée (plusieurs développeurs)
 
 2. CACHE STREAMLIT (@st.cache_resource et @st.cache_data)
-   -------------------------------------------------------
-   Le cache est ESSENTIEL pour les performances de Streamlit.
-   
-   Sans cache : Chaque interaction (clic, slider) RECHARGE TOUT
-   Avec cache : Chargement UNE FOIS, puis réutilisation
-   
-   Deux types de cache :
-   
-   @st.cache_resource → Pour objets NON-sérialisables
-   - Modèles ML (LightGBM, LSTM)
-   - Connexions BD
-   - Sessions réseau
-   
-   @st.cache_data → Pour données sérialisables
-   - DataFrames
-   - Listes, dictionnaires
-   - Résultats de calculs
+    -------------------------------------------------------
+    Le cache est ESSENTIEL pour les performances de Streamlit.
+    
+    Sans cache : Chaque interaction (clic, slider) RECHARGE TOUT
+    Avec cache : Chargement UNE FOIS, puis réutilisation
+    
+    Deux types de cache :
+    
+    @st.cache_resource → Pour objets NON-sérialisables
+    - Modèles ML (LightGBM, LSTM)
+    - Connexions BD
+    - Sessions réseau
+    
+    @st.cache_data → Pour données sérialisables
+    - DataFrames
+    - Listes, dictionnaires
+    - Résultats de calculs
 
 3. GESTION ROBUSTE DES ERREURS (GRACEFUL DEGRADATION)
-   ---------------------------------------------------
-   Une bonne application ne crash JAMAIS pour l'utilisateur.
-   
-   Principe : Si quelque chose échoue, l'app continue avec fonctionnalités réduites.
-   
-   Exemples dans ce fichier :
-   - BD inaccessible ? → Prédictions temps réel fonctionnent toujours
-   - LSTM échoue ? → Utilise seulement LightGBM
-   - Quartier inconnu ? → Utilise une valeur par défaut
+    ---------------------------------------------------
+    Une bonne application ne crash JAMAIS pour l'utilisateur.
+    
+    Principe : Si quelque chose échoue, l'app continue avec fonctionnalités réduites.
+    
+    Exemples dans ce fichier :
+    - BD inaccessible ? → Prédictions temps réel fonctionnent toujours
+    - LSTM échoue ? → Utilise seulement LightGBM
+    - Quartier inconnu ? → Utilise une valeur par défaut
+    
+    **✅ NOUVEAU : Si le Scaler ou un modèle est `None` (erreur de chargement), la prédiction s'arrête proprement et retourne un statut "Erreur Critique" au lieu de crasher (AttributeError).**
 
 4. PRÉDICTIONS ENSEMBLE (LIGHTGBM + LSTM)
-   ----------------------------------------
-   On utilise DEUX modèles pour plus de robustesse.
-   
-   LightGBM :
-   - Rapide (millisecondes)
-   - Fonctionne toujours (pas besoin d'historique)
-   - Excellent sur données tabulaires
-   
-   LSTM :
-   - Capture les tendances temporelles
-   - Nécessite historique (12 heures)
-   - Plus lent (quelques secondes)
-   
-   Prédiction finale = MOYENNE des deux
+    ----------------------------------------
+    On utilise DEUX modèles pour plus de robustesse.
+    
+    LightGBM :
+    - Rapide (millisecondes)
+    - Fonctionne toujours (pas besoin d'historique)
+    - Excellent sur données tabulaires
+    
+    LSTM :
+    - Capture les tendances temporelles
+    - Nécessite historique (12 heures)
+    - Plus lent (quelques secondes)
+    
+    Prédiction finale = MOYENNE des deux
 
 5. NORMALISATION DES FEATURES (STANDARDSCALER)
-   --------------------------------------------
-   CRITIQUE : Les features doivent avoir la même échelle qu'à l'entraînement.
-   
-   StandardScaler transforme : X_scaled = (X - mean) / std
-   
-   ⚠️ ATTENTION : Utiliser le MÊME scaler qu'à l'entraînement !
-   - scaler.fit() → À l'entraînement (calcule mean/std)
-   - scaler.transform() → En production (applique mean/std)
-   
-   Ne JAMAIS appeler fit() en production !
+    --------------------------------------------
+    CRITIQUE : Les features doivent avoir la même échelle qu'à l'entraînement.
+    
+    StandardScaler transforme : X_scaled = (X - mean) / std
+    
+    ⚠️ ATTENTION : Utiliser le MÊME scaler qu'à l'entraînement !
+    - scaler.fit() → À l'entraînement (calcule mean/std)
+    - scaler.transform() → En production (applique mean/std)
+    
+    Ne JAMAIS appeler fit() en production !
 
 6. VALIDATION DES INPUTS UTILISATEUR
-   -----------------------------------
-   JAMAIS faire confiance aux entrées utilisateur.
-   
-   validate_input() vérifie les ranges AVANT prédiction.
-   
-   Bonnes pratiques :
-   ✅ Valider côté client (Streamlit sliders avec min/max)
-   ✅ Valider côté serveur (validate_input())
-   ✅ Afficher des messages d'erreur clairs
+    -----------------------------------
+    JAMAIS faire confiance aux entrées utilisateur.
+    
+    validate_input() vérifie les ranges AVANT prédiction.
+    
+    Bonnes pratiques :
+    ✅ Valider côté client (Streamlit sliders avec min/max)
+    ✅ Valider côté serveur (validate_input())
+    ✅ Afficher des messages d'erreur clairs
 
 7. COMMANDES UTILES
-   -----------------
-   # Lancer l'application Streamlit
-   streamlit run streamlit_app/app.py
-   
-   # Avec debug (auto-reload)
-   streamlit run streamlit_app/app.py --server.runOnSave true
-   
-   # Tester une fonction utils
-   python -c "from streamlit_app.utils import load_models; print(load_models())"
-   
-   # Clear cache manuellement
-   # Dans l'app : Menu (☰) > Clear cache
+    -----------------
+    # Lancer l'application Streamlit
+    streamlit run streamlit_app/app.py
+    
+    # Avec debug (auto-reload)
+    streamlit run streamlit_app/app.py --server.runOnSave true
+    
+    # Tester une fonction utils
+    python -c "from streamlit_app.utils import load_models; print(load_models())"
+    
+    # Clear cache manuellement
+    # Dans l'app : Menu (☰) > Clear cache
 
 8. ERREURS COURANTES ET SOLUTIONS
-   --------------------------------
-   ❌ "Session state has no attribute X"
-   ✅ Initialiser dans app.py : if 'X' not in st.session_state: st.session_state.X = default
-   
-   ❌ "Model file not found"
-   ✅ Vérifier que les modèles sont entraînés (python scripts/2_train_models.py)
-   
-   ❌ "Scaler expects X features but got Y"
-   ✅ Vérifier que feature_cols a le bon ordre et nombre de colonnes
-   
-   ❌ "LabelEncoder: classes_ not found"
-   ✅ Vérifier que l'encodeur est bien sauvegardé après l'entraînement
-   
-   ❌ Page blanche / app ne démarre pas
-   ✅ Vérifier les imports (pip install -r requirements.txt)
-   
-   ❌ Cache ne se vide pas
-   ✅ Redémarrer l'app (Ctrl+C puis relancer)
+    --------------------------------
+    ❌ "Session state has no attribute X"
+    ✅ Initialiser dans app.py : if 'X' not in st.session_state: st.session_state.X = default
+    
+    ❌ "Model file not found"
+    ✅ Vérifier que les modèles sont entraînés (python scripts/2_train_models.py)
+    
+    ❌ "Scaler expects X features but got Y"
+    ✅ Vérifier que feature_cols a le bon ordre et nombre de colonnes
+    
+    ❌ "LabelEncoder: classes_ not found"
+    ✅ Vérifier que l'encodeur est bien sauvegardé après l'entraînement
+    
+    ❌ Page blanche / app ne démarre pas
+    ✅ Vérifier les imports (pip install -r requirements.txt)
+    
+    ❌ Cache ne se vide pas
+    ✅ Redémarrer l'app (Ctrl+C puis relancer)
 
 9. GESTION DES SÉQUENCES TEMPORELLES (LSTM)
-   -----------------------------------------
-   LSTM nécessite une séquence de SEQUENCE_LENGTH observations (ex: 12 heures).
-   
-   Format d'entrée LSTM : (samples, timesteps, features)
-   - samples = 1 (une prédiction à la fois)
-   - timesteps = 12 (12 heures d'historique)
-   - features = 9 (9 colonnes)
-   
-   Shape finale : (1, 12, 9)
-   
-   Construction de la séquence :
-   1. Récupérer les 11 dernières heures de l'historique
-   2. Ajouter l'observation actuelle (1 heure)
-   3. Total : 12 heures
-   4. Normaliser TOUTE la séquence
-   5. Reshaper pour LSTM
-   
-   Si historique insuffisant (<11 heures) :
-   → LSTM non utilisable, utilise seulement LightGBM
+    -----------------------------------------
+    LSTM nécessite une séquence de SEQUENCE_LENGTH observations (ex: 12 heures).
+    
+    Format d'entrée LSTM : (samples, timesteps, features)
+    - samples = 1 (une prédiction à la fois)
+    - timesteps = 12 (12 heures d'historique)
+    - features = 9 (9 colonnes)
+    
+    Shape finale : (1, 12, 9)
+    
+    Construction de la séquence :
+    1. Récupérer les 11 dernières heures de l'historique
+    2. Ajouter l'observation actuelle (1 heure)
+    3. Total : 12 heures
+    4. Normaliser TOUTE la séquence
+    5. Reshaper pour LSTM
+    
+    Si historique insuffisant (<11 heures) :
+    → LSTM non utilisable, utilise seulement LightGBM
 
 10. PROBABILITÉS VS PRÉDICTIONS BINAIRES
     -------------------------------------
@@ -916,14 +932,15 @@ def save_prediction_to_db(db, prediction_data):
     1. Utilisateur saisit : température, humidité, vent, consommation, quartier
     2. validate_input() vérifie les ranges
     3. make_prediction_single() est appelée :
-       a. Création du DataFrame
-       b. Génération des features temporelles
-       c. Encodage du quartier
-       d. Normalisation (StandardScaler)
-       e. Prédiction LightGBM
-       f. Prédiction LSTM (si historique disponible)
-       g. Calcul de la probabilité moyenne
-       h. Détermination du statut de risque
+        a. **Vérification si les modèles/scaler sont chargés (nouvelle étape)**
+        b. Création du DataFrame
+        c. Génération des features temporelles
+        d. Encodage du quartier
+        e. Normalisation (StandardScaler)
+        f. Prédiction LightGBM
+        g. Prédiction LSTM (si historique disponible)
+        h. Calcul de la probabilité moyenne
+        i. Détermination du statut de risque
     4. Résultats affichés dans l'interface Streamlit
     5. (Optionnel) save_prediction_to_db() sauvegarde dans la BD
 
@@ -939,71 +956,5 @@ def save_prediction_to_db(db, prediction_data):
     BIBLIOTHÈQUES EXTERNES :
     - streamlit : Framework d'interface
     - pandas : Manipulation de données
-    - numpy : Calculs numériques
-    - joblib : Chargement modèles/scaler/encodeur
-    - tensorflow : Chargement LSTM
-    
-    FICHIERS REQUIS (générés par l'entraînement) :
-    - models/lgbm_model.joblib : Modèle LightGBM
-    - models/lstm_model.h5 : Modèle LSTM
-    - models/lstm_threshold.txt : Seuil LSTM
-    - models/scaler.joblib : StandardScaler
-    - models/encoders.joblib : LabelEncoder
-    
-    Si un fichier manque → Erreur au chargement → Affichage dans Streamlit
-
-19. TESTS UNITAIRES POSSIBLES
-    --------------------------
-    Exemples de tests à écrire pour ce module :
-    
-    ```python
-    def test_format_percentage():
-        assert format_percentage(0.07) == "7.00%"
-        assert format_percentage(1.0) == "100.00%"
-    
-    def test_validate_input():
-        # Valid
-        is_valid, _ = validate_input(25, 60, 10, 500)
-        assert is_valid == True
-        
-        # Invalid temperature
-        is_valid, msg = validate_input(50, 60, 10, 500)
-        assert is_valid == False
-        assert "Température" in msg
-    
-    def test_get_risk_color():
-        assert get_risk_color(0.1) == "green"
-        assert get_risk_color(0.5) == "orange"
-        assert get_risk_color(0.9) == "red"
-    
-    def test_get_quartier_list():
-        quartiers = get_quartier_list()
-        assert len(quartiers) > 0
-        assert "Dakar-Plateau" in quartiers
-    ```
-
-20. MAINTENANCE ET ÉVOLUTION
-    -------------------------
-    Ce fichier est stable mais peut évoluer :
-    
-    AJOUTS FUTURS POSSIBLES :
-    - Nouvelles métriques d'affichage
-    - Support de nouveaux modèles (XGBoost, Random Forest)
-    - Prédictions batch (plusieurs quartiers simultanément)
-    - Export des résultats (PDF, Excel)
-    - Notifications par email/SMS
-    - Intégration API externe (météo en temps réel)
-    
-    RÈGLES DE MAINTENANCE :
-    - Une fonction = une responsabilité (Single Responsibility Principle)
-    - Toujours documenter les nouvelles fonctions
-    - Ajouter des tests unitaires
-    - Maintenir la cohérence du style de code
-    - Versionner les changements (Git)
-    
-    SIGNAUX D'ALERTE :
-    - Fonction > 50 lignes → Décomposer
-    - Duplication de code → Factoriser
-    - Trop de try/except imbriqués → Simplifier
-    - Import circulaire → Revoir l'architecture
+    - numpy : Calculs numériq
 """
