@@ -44,7 +44,7 @@ PROCESSED_DATA_FILE = DATA_PROCESSED_DIR / "processed_data.csv"  # Avec features
 SCALER_FILE = MODELS_DIR / "scaler.pkl"           # StandardScaler pour normalisation
 ENCODERS_FILE = MODELS_DIR / "encoders.pkl"       # LabelEncoder pour les quartiers
 LGBM_MODEL_FILE = MODELS_DIR / "lgbm_model.pkl"   # Modèle LightGBM entraîné
-LSTM_MODEL_FILE = MODELS_DIR / "lstm_model.keras" # Modèle LSTM (TensorFlow)
+LSTM_MODEL_FILE = MODELS_DIR / "lstm_model.h5" # Modèle LSTM (TensorFlow)
 
 # Création automatique des dossiers s'ils n'existent pas encore
 # Ça évite les erreurs "FileNotFoundError" lors de la première exécution
