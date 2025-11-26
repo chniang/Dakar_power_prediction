@@ -1,18 +1,6 @@
 # Fichier : scripts/2_train_models.py
-# Script d'entraînement V6 SANS SMOTE (Correction Finale + Fix Keras)
+# Script d'entraînement V6.1 SANS SMOTE (Correction Finale + Fix Keras + Extensions .pkl)
 # ========================================================
-#
-# Ce script entraîne les 2 modèles ML du projet en séquence.
-#
-# CONTEXTE :
-# Ce fichier est le cœur du projet. Il transforme les données prétraitées
-# en modèles ML capables de prédire les coupures d'électricité.
-#
-# VERSION 6.1 - CORRECTION KERAS :
-# Problème résolu : Erreur InputLayer avec batch_shape
-# Solution : Utilisation de Input() explicite au lieu de input_shape dans LSTM
-#
-# DURÉE : ~10 minutes (LightGBM 2 min, LSTM 8 min)
 
 import sys
 from pathlib import Path
@@ -22,7 +10,6 @@ import joblib
 import warnings
 warnings.filterwarnings('ignore')
 
-# Ajouter le dossier racine au path pour importer src/
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Import des modules internes
@@ -34,12 +21,12 @@ try:
     )
 except ImportError as e:
     print(f"⚠️ AVERTISSEMENT: Impossible d'importer un module interne. Erreur: {e}")
-    LGBM_MODEL_FILE = Path("models/lgbm_model.joblib")
-    LSTM_MODEL_FILE = Path("models/lstm_model.h5")
+    # ✅ CORRECTION : Extensions cohérentes (.pkl et .h5)
+    LGBM_MODEL_FILE = Path("models/lgbm_model.pkl")  # ✅ .pkl
+    LSTM_MODEL_FILE = Path("models/lstm_model.h5")   # ✅ .h5
     SEQUENCE_LENGTH = 12
     LSTM_EPOCHS = 50
 
-# Batch size par défaut
 DEFAULT_LSTM_BATCH_SIZE = 256
 if 'LSTM_BATCH_SIZE' not in locals():
     LSTM_BATCH_SIZE = DEFAULT_LSTM_BATCH_SIZE
@@ -52,7 +39,7 @@ from sklearn.metrics import (
     classification_report
 )
 
-# DL - ✅ CORRECTION : Ajouter Input dans les imports
+# DL
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential
@@ -61,15 +48,9 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 
 
 class ImprovedModelTrainer:
-    """
-    Entraîneur V6.1 - SANS SMOTE + Fix Keras Input Layer.
-    
-    Cette classe gère l'entraînement complet des 2 modèles du projet.
-    Elle orchestre : préparation données → entraînement → évaluation → sauvegarde.
-    """
+    """Entraîneur V6.1 - SANS SMOTE + Fix Keras + Extensions cohérentes"""
     
     def __init__(self):
-        """Initialise l'entraîneur avec le pipeline de données."""
         if 'DataPipeline' in globals():
             self.pipeline = DataPipeline()
         else:
@@ -79,25 +60,16 @@ class ImprovedModelTrainer:
         self.lstm_model = None
     
     def train_lgbm_improved(self, X_train, y_train, X_test, y_test):
-        """
-        Entraîne LightGBM SANS SMOTE (correction V6).
-        
-        AVANT V6 : SMOTE créait des données synthétiques qui inversaient les corrélations
-        APRÈS V6 : Données réelles uniquement + scale_pos_weight=10.0
-        
-        Résultat : Guediawaye > Dakar-Plateau (cohérent avec les données)
-        """
+        """Entraîne LightGBM SANS SMOTE (correction V6)"""
         print("\n" + "="*60)
         print("🌳 ENTRAÎNEMENT LIGHTGBM V6 (SANS SMOTE)")
         print("="*60)
         
-        # Afficher la distribution (vérifier le déséquilibre 93%/7%)
         print(f"\n⚖️ Distribution originale (AUCUN rééchantillonnage) :")
         print(f"   Classe 0 (pas de coupure) : {(y_train == 0).sum():,}")
         print(f"   Classe 1 (coupure)        : {(y_train == 1).sum():,}")
         print(f"   Ratio coupures            : {y_train.mean()*100:.2f}%")
         
-        # Paramètres LightGBM optimisés V6
         params = {
             'objective': 'binary',
             'metric': 'auc',
@@ -118,11 +90,9 @@ class ImprovedModelTrainer:
             'random_state': 42
         }
         
-        # Créer les datasets LightGBM
         train_data = lgb.Dataset(X_train, label=y_train)
         test_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
         
-        # Entraîner
         print("\n🔄 Entraînement en cours (données réelles uniquement)...")
         self.lgbm_model = lgb.train(
             params,
@@ -138,7 +108,6 @@ class ImprovedModelTrainer:
         
         print("\n✅ Entraînement terminé !")
         
-        # Importance des features
         print("\n📊 Importance des features (top 5) :")
         feature_importance = self.lgbm_model.feature_importance(importance_type='gain')
         feature_names = [f'feature_{i}' for i in range(len(feature_importance))]
@@ -151,7 +120,6 @@ class ImprovedModelTrainer:
         for idx, row in importance_df.head(5).iterrows():
             print(f"   {row['feature']}: {row['importance']:.0f}")
         
-        # Trouver le seuil optimal
         print("\n📊 Recherche du seuil optimal...")
         y_pred_proba = self.lgbm_model.predict(X_test)
         
@@ -160,43 +128,23 @@ class ImprovedModelTrainer:
         
         y_pred = (y_pred_proba >= best_threshold).astype(int)
         
-        # Afficher les métriques
         self._print_metrics(y_test, y_pred, y_pred_proba, "LightGBM V6 (Sans SMOTE)")
         
-        # Sauvegarder le modèle + seuil
+        # ✅ CORRECTION : Sauvegarder avec .pkl (joblib)
         LGBM_MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({
             'model': self.lgbm_model,
             'threshold': best_threshold
         }, LGBM_MODEL_FILE)
-        print(f"\n💾 Modèle sauvegardé : {LGBM_MODEL_FILE}")
+        print(f"\n💾 Modèle sauvegardé : {LGBM_MODEL_FILE} (.pkl)")
         
         return self.lgbm_model
     
     def build_improved_lstm(self, input_shape):
-        """
-        Construit l'architecture LSTM optimisée - VERSION CORRIGÉE V6.1.
-        
-        ✅ CORRECTION MAJEURE : Utilisation de Input() explicite
-        au lieu de input_shape dans la couche LSTM.
-        
-        Architecture :
-        - Input explicite (shape au lieu de batch_shape)
-        - LSTM 100 units (return_sequences=True)
-        - BatchNorm + Dropout 40%
-        - LSTM 50 units
-        - BatchNorm + Dropout 40%
-        - Dense 32 + BatchNorm + Dropout 30%
-        - Dense 16 + Dropout 20%
-        - Dense 1 (sigmoid)
-        
-        Total : ~77,000 paramètres
-        """
+        """Construit l'architecture LSTM optimisée - VERSION CORRIGÉE V6.1"""
         model = Sequential([
-            # ✅ CORRECTION : Couche Input() explicite
             Input(shape=input_shape),
             
-            # ✅ CORRECTION : Retirer input_shape d'ici
             LSTM(100, return_sequences=True),
             BatchNormalization(),
             Dropout(0.4),
@@ -231,17 +179,11 @@ class ImprovedModelTrainer:
         return model
     
     def train_lstm_improved(self, X_train, y_train, X_test, y_test):
-        """
-        Entraîne le modèle LSTM avec architecture corrigée.
-        
-        LSTM est moins performant que LightGBM sur ce dataset (52k lignes),
-        mais il est utile pour comparaison et ensemble learning.
-        """
+        """Entraîne le modèle LSTM avec architecture corrigée"""
         print("\n" + "="*60)
         print("🧠 ENTRAÎNEMENT LSTM V6.1 (Fix Keras)")
         print("="*60)
         
-        # Créer les séquences temporelles (12 heures d'historique)
         print(f"\n🔄 Création des séquences (longueur={SEQUENCE_LENGTH})...")
         X_train_seq, y_train_seq = self.pipeline.create_sequences(X_train, y_train, SEQUENCE_LENGTH)
         X_test_seq, y_test_seq = self.pipeline.create_sequences(X_test, y_test, SEQUENCE_LENGTH)
@@ -249,22 +191,18 @@ class ImprovedModelTrainer:
         print(f"   Train: {X_train_seq.shape}")
         print(f"   Test:  {X_test_seq.shape}")
         
-        # Poids des classes (compenser le déséquilibre)
         neg_count = (y_train_seq == 0).sum()
         pos_count = (y_train_seq == 1).sum()
         class_weight = {0: 1.0, 1: neg_count / pos_count}
         print(f"\n⚖️ Poids des classes : {class_weight}")
         
-        # Construire le modèle
         print("\n🏗️ Construction du modèle LSTM (avec Input() explicite)...")
         input_shape = (X_train_seq.shape[1], X_train_seq.shape[2])
         self.lstm_model = self.build_improved_lstm(input_shape)
         
-        # Afficher l'architecture
         print("\n📐 Architecture du modèle :")
         self.lstm_model.summary()
         
-        # Callbacks
         callbacks = [
             EarlyStopping(
                 monitor='val_auc',
@@ -289,7 +227,6 @@ class ImprovedModelTrainer:
             )
         ]
         
-        # Entraîner
         print(f"\n🔄 Entraînement en cours (Batch: {LSTM_BATCH_SIZE}, Epochs: {LSTM_EPOCHS})...")
         history = self.lstm_model.fit(
             X_train_seq, y_train_seq,
@@ -303,7 +240,6 @@ class ImprovedModelTrainer:
         
         print("\n✅ Entraînement terminé !")
         
-        # Évaluation
         print("\n📊 Évaluation sur le test set :")
         y_pred_proba = self.lstm_model.predict(X_test_seq, verbose=0).flatten()
         
@@ -314,25 +250,17 @@ class ImprovedModelTrainer:
         
         self._print_metrics(y_test_seq, y_pred, y_pred_proba, "LSTM V6.1")
         
-        # Sauvegarder le seuil
         threshold_file = LSTM_MODEL_FILE.parent / "lstm_threshold.txt"
         with open(threshold_file, 'w') as f:
             f.write(str(best_threshold))
         
-        print(f"\n💾 Modèle sauvegardé : {LSTM_MODEL_FILE}")
+        print(f"\n💾 Modèle sauvegardé : {LSTM_MODEL_FILE} (.h5)")
         print(f"💾 Seuil sauvegardé : {threshold_file}")
         
         return self.lstm_model, history
     
     def _find_best_threshold(self, y_true, y_pred_proba):
-        """
-        Trouve le meilleur seuil pour maximiser F1-Score.
-        
-        On teste tous les seuils de 0.05 à 0.95 par pas de 0.01
-        et on garde celui qui donne le meilleur F1-Score.
-        
-        Résultat typique : ~0.21 pour LightGBM, ~0.50 pour LSTM
-        """
+        """Trouve le meilleur seuil pour maximiser F1-Score"""
         thresholds = np.arange(0.05, 0.95, 0.01)
         best_f1 = 0
         best_threshold = 0.5
@@ -348,17 +276,7 @@ class ImprovedModelTrainer:
         return best_threshold
     
     def _print_metrics(self, y_true, y_pred, y_pred_proba, model_name):
-        """
-        Affiche toutes les métriques de performance.
-        
-        Métriques calculées :
-        - Accuracy : % de prédictions correctes
-        - Precision : % de vraies positives parmi les prédictions positives
-        - Recall : % de vraies positives détectées
-        - F1-Score : Moyenne harmonique de Precision et Recall
-        - ROC-AUC : Capacité à discriminer les classes
-        - Matrice de confusion : TN, FP, FN, TP
-        """
+        """Affiche toutes les métriques de performance"""
         acc = accuracy_score(y_true, y_pred)
         prec = precision_score(y_true, y_pred, zero_division=0)
         rec = recall_score(y_true, y_pred, zero_division=0)
@@ -384,19 +302,11 @@ class ImprovedModelTrainer:
                                     zero_division=0))
     
     def train_all(self):
-        """
-        Entraîne tous les modèles séquentiellement.
-        
-        Pipeline complet :
-        1. Préparation des données (DataPipeline)
-        2. Entraînement LightGBM
-        3. Entraînement LSTM
-        """
+        """Entraîne tous les modèles séquentiellement"""
         print("\n" + "="*60)
-        print("🚀 ENTRAÎNEMENT V6.1 - SANS SMOTE + Fix Keras")
+        print("🚀 ENTRAÎNEMENT V6.1 - SANS SMOTE + Fix Keras + Extensions .pkl")
         print("="*60)
         
-        # Préparer les données
         print("\n1️⃣ Préparation des données...")
         data = self.pipeline.process_for_training(save_processed=True)
         
@@ -405,11 +315,9 @@ class ImprovedModelTrainer:
         y_train = data['y_train']
         y_test = data['y_test']
         
-        # Entraîner LightGBM
         print("\n2️⃣ Entraînement LightGBM (sans SMOTE)...")
         self.train_lgbm_improved(X_train, y_train, X_test, y_test)
         
-        # Entraîner LSTM
         print("\n3️⃣ Entraînement LSTM (avec Input() corrigé)...")
         self.train_lstm_improved(X_train, y_train, X_test, y_test)
         
@@ -419,13 +327,7 @@ class ImprovedModelTrainer:
 
 
 def main():
-    """
-    Fonction principale du script.
-    
-    Exécutée quand on lance : python scripts/2_train_models.py
-    
-    Cette fonction crée l'entraîneur et lance l'entraînement complet.
-    """
+    """Fonction principale du script"""
     try:
         trainer = ImprovedModelTrainer()
         trainer.train_all()
