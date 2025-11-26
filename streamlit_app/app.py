@@ -332,7 +332,7 @@ def display_single_prediction(result, quartier):
     ))
     
     fig_gauge.update_layout(height=400)
-    st.plotly_chart(fig_gauge, use_container_width=True)
+    st.plotly_chart(fig_gauge, width='stretch')
 
 # ====================================
 # TAB 1 : PRÉDICTION IMMÉDIATE
@@ -489,7 +489,7 @@ with tab2:
             coloraxis_colorbar=dict(title="Probabilité", tickformat='.0%')
         )
         
-        st.plotly_chart(fig_map, use_container_width=True)
+        st.plotly_chart(fig_map, width='stretch')
         
         st.markdown("### 📊 Récapitulatif par Quartier")
         
@@ -502,7 +502,7 @@ with tab2:
         
         df_display = df_display[['Quartier', 'Probabilité', 'Statut', 'LightGBM', 'LSTM']]
         
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        st.dataframe(df_display, width='stretch', hide_index=True)
         
         st.info(f"💡 **Prédictions calculées en temps réel** | Dernière mise à jour : {datetime.now().strftime('%H:%M:%S')}")
 
@@ -532,7 +532,7 @@ with tab3:
                 fig_bar.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
                 fig_bar.update_layout(height=400, showlegend=False, xaxis={'categoryorder': 'total descending'})
                 
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width='stretch')
                 
                 st.markdown("### 📋 Statistiques Détaillées")
                 
@@ -542,7 +542,7 @@ with tab3:
                 stats_display['conso_moyenne'] = stats_display['conso_moyenne'].apply(lambda x: f"{x:.1f} MW")
                 stats_display.columns = ['Quartier', 'Total Enregistrements', 'Total Coupures', 'Taux Coupure', 'Temp. Moyenne', 'Conso. Moyenne']
                 
-                st.dataframe(stats_display, use_container_width=True, hide_index=True)
+                st.dataframe(stats_display, width='stretch', hide_index=True)
             else:
                 st.warning("⚠️ Aucune donnée statistique disponible dans la base de données.")
     else:
@@ -618,7 +618,7 @@ with tab4:
                     hovermode='x unified'
                 )
                 
-                st.plotly_chart(fig_hist, use_container_width=True)
+                st.plotly_chart(fig_hist, width='stretch')
                 
                 st.markdown("### 🔍 Statistiques de la Période Sélectionnée")
                 col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
