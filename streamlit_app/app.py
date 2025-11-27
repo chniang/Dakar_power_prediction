@@ -1,45 +1,43 @@
 # Fichier : streamlit_app/app.py
-# Application Streamlit Professionnelle - Dakar Power Prediction
+# Application Streamlit Professionnelle - Dakar Power Prediction avec Supabase
 # ================================================================
 
 # Importations des librairies standards et scientifiques
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
 
-# Ajouter le dossier parent au path pour permettre les imports depuis 'src' et 'streamlit_app'
-project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root))
+# Ajouter le dossier parent au path pour importer les modules
+sys.path.append(str(Path(__file__).parent.parent))
 
-# Imports locaux (fonctions utilitaires pour le chargement, la prédiction et les données)
+# Imports du projet
+from src.config import QUARTIERS_DAKAR, SEUILS_RISQUE
 from streamlit_app.utils import (
-    load_models, get_database, make_prediction_single,
-    get_historical_data, get_statistics_by_quartier,
-    validate_input, get_quartier_coords, get_quartier_list,
-    save_prediction_to_db, format_percentage
+    load_models_cached,
+    create_time_features,
+    make_prediction_single,
+    create_gauge_chart,
+    create_risk_map,
+    get_risk_color,
+    get_risk_level
 )
 
-# Assurez-vous que src.config est accessible et charger les seuils de risque et le centre de la carte
-try:
-    from src.config import THRESHOLD_MODERATE, THRESHOLD_HIGH, MAP_CENTER
-except ImportError:
-    # Valeurs par défaut si le fichier config n'est pas trouvé (pour la robustesse de l'app)
-    THRESHOLD_MODERATE = 0.15
-    THRESHOLD_HIGH = 0.30
-    MAP_CENTER = {"lat": 14.716677, "lon": -17.467686}
-    st.warning("⚠️ Impossible de charger src.config. Utilisation des seuils par défaut.")
+# Import Supabase Database
+from src.database import get_db
 
-# ====================================
+# Imports pour les visualisations
+import plotly.express as px
+import plotly.graph_objects as go
+
+# ================================================================
 # CONFIGURATION DE LA PAGE
-# ====================================
+# ================================================================
 
 st.set_page_config(
-    page_title="Dakar Power Prediction",
+    page_title="⚡ Dakar Power Prediction",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -49,218 +47,154 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 3rem;
         font-weight: bold;
-        color: #1f77b4;
         text-align: center;
+        background: linear-gradient(90deg, #FF4B4B 0%, #FF8C00 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+    }
+    .sub-header {
+        text-align: center;
+        color: #666;
         margin-bottom: 2rem;
     }
     .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
+    .risk-low {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 3rem;
-        padding: 0 2rem;
+    .risk-medium {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    .risk-high {
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    }
+    .stButton>button {
+        width: 100%;
+        background: linear-gradient(90deg, #FF4B4B 0%, #FF8C00 100%);
+        color: white;
+        border: none;
+        padding: 0.75rem;
         font-size: 1.1rem;
+        font-weight: bold;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s;
     }
-    .debug-box {
-        background-color: #f0f8ff;
-        color: #1c1e21;
-        border-left: 4px solid #1f77b4;
-        padding: 1rem;
-        margin: 1rem 0;
-        border-radius: 0.5rem;
-    }
-    .stApp[data-theme="dark"] .debug-box {
-        background-color: #262730;
-        color: #f0f8ff;
-        border-left: 4px solid #90caf9;
-    }
-    [data-testid="stMetricValue"] {
-        font-size: 2.5rem;
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(255, 75, 75, 0.4);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ====================================
-# CHARGEMENT DES RESSOURCES (CACHE)
-# ====================================
+# ================================================================
+# HEADER
+# ================================================================
+
+st.markdown('<h1 class="main-header">⚡ Prédiction de Coupures d\'Électricité à Dakar</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Système de prédiction intelligent basé sur LightGBM et LSTM</p>', unsafe_allow_html=True)
+
+# ================================================================
+# CHARGEMENT DES MODÈLES ET BASE DE DONNÉES
+# ================================================================
 
 @st.cache_resource
-def load_models_cached():
-    """✅ CORRECTION : Gestion d'erreur améliorée pour le chargement LSTM"""
-    try:
-        return load_models()
-    except Exception as e:
-        st.error(f"❌ Erreur critique lors du chargement des modèles : {e}")
-        import traceback
-        st.error(traceback.format_exc())
-        return None, 0.5, None, 0.5, None, None
+def initialize_app():
+    """Initialiser les modèles et la base de données"""
+    models = load_models_cached()
+    db = get_db()
+    return models, db
 
-@st.cache_data
-def load_static_data():
-    """Charge les données statiques (quartiers et coordonnées)."""
-    quartiers = get_quartier_list()
-    coords = get_quartier_coords()
-    return {'quartiers': quartiers, 'coords': coords}
+models, db = initialize_app()
 
-# ====================================
-# FONCTION DE PRÉDICTION POUR TOUS LES QUARTIERS
-# ====================================
-
-def get_predictions_for_all_quartiers(temp, hum, vent, conso, models_data, quartiers_list, run_id):
-    """Calcule les prédictions de risque pour tous les quartiers."""
-    print(f"🔍 [RUN {run_id}] Calcul predictions: temp={temp}°C, hum={hum}%, vent={vent}km/h, conso={conso}MW")
-    
-    quartiers_data = []
-    
-    for quartier in quartiers_list:
-        coords = models_data['coords'].get(quartier, {'lat': 0, 'lon': 0})
-        
-        input_data = {
-            'temperature': temp,
-            'humidite': hum,
-            'vent': vent,
-            'consommation': conso
-        }
-        
-        historical_data = get_historical_data(models_data['db'], quartier=quartier, hours=168)
-        
-        try:
-            result = make_prediction_single(
-                input_data,
-                quartier,
-                models_data['lgbm_model'],
-                models_data['lgbm_threshold'],
-                models_data['lstm_model'],
-                models_data['lstm_threshold'],
-                models_data['scaler'],
-                models_data['label_encoder'],
-                historical_data
-            )
-            
-            print(f"  {quartier}: LightGBM={result['proba_lgbm']*100:.2f}%, LSTM={result['proba_lstm']*100:.2f}%")
-            
-            quartiers_data.append({
-                'Quartier': quartier,
-                'Latitude': coords['lat'],
-                'Longitude': coords['lon'],
-                'Probabilité': result['proba_moyenne'],
-                'Statut': result['statut'],
-                'Emoji': result['emoji'],
-                'LightGBM': result['proba_lgbm'],
-                'LSTM': result['proba_lstm']
-            })
-        except Exception as e:
-            print(f"  ❌ Erreur pour {quartier}: {e}")
-            quartiers_data.append({
-                'Quartier': quartier,
-                'Latitude': coords['lat'],
-                'Longitude': coords['lon'],
-                'Probabilité': 0.0,
-                'Statut': 'Erreur',
-                'Emoji': '⚠️',
-                'LightGBM': 0.0,
-                'LSTM': 0.0
-            })
-    
-    print(f"✅ [RUN {run_id}] Calcul terminé pour {len(quartiers_data)} quartiers")
-    return quartiers_data
-
-# ====================================
-# CHARGEMENT INITIAL & SESSION STATE
-# ====================================
-
-models_result = load_models_cached()
-
-if models_result is None or models_result[0] is None:
-    st.error("❌ Échec du chargement des modèles. L'application ne peut pas fonctionner correctement.")
+# Vérifier que les modèles sont chargés
+if not models or models['lgb'] is None:
+    st.error("❌ Erreur : Les modèles n'ont pas pu être chargés. Vérifiez le dossier 'models/'.")
     st.stop()
 
-lgbm_model, lgbm_threshold, lstm_model, lstm_threshold, scaler, label_encoder = models_result
-static_data = load_static_data()
-db = get_database()
+# ================================================================
+# SIDEBAR - PARAMÈTRES
+# ================================================================
 
-data = {
-    'lgbm_model': lgbm_model,
-    'lgbm_threshold': lgbm_threshold,
-    'lstm_model': lstm_model,
-    'lstm_threshold': lstm_threshold,
-    'scaler': scaler,
-    'label_encoder': label_encoder,
-    'db': db,
-    'quartiers': static_data['quartiers'],
-    'coords': static_data['coords']
-}
+st.sidebar.header("⚙️ Paramètres")
 
-if 'last_prediction_result' not in st.session_state:
-    st.session_state['last_prediction_result'] = None
-if 'last_prediction_quartier' not in st.session_state:
-    st.session_state['last_prediction_quartier'] = None
+# Sélection du quartier
+st.sidebar.subheader("📍 Quartier à analyser")
+quartier = st.sidebar.selectbox(
+    "Choisissez un quartier",
+    QUARTIERS_DAKAR,
+    index=0
+)
 
-# ====================================
-# HEADER
-# ====================================
+# Conditions météorologiques
+st.sidebar.subheader("🌡️ Conditions Météorologiques")
 
-st.markdown('<div class="main-header">⚡ Prédiction de Coupures d\'Électricité à Dakar</div>', unsafe_allow_html=True)
-st.markdown("---")
+temperature = st.sidebar.slider(
+    "Température (°C)",
+    min_value=15.0,
+    max_value=40.0,
+    value=25.0,
+    step=0.5,
+    help="Température ambiante en degrés Celsius"
+)
 
-# ====================================
-# SIDEBAR - CONTRÔLES
-# ====================================
+humidite = st.sidebar.slider(
+    "Humidité (%)",
+    min_value=30.0,
+    max_value=100.0,
+    value=65.0,
+    step=1.0,
+    help="Taux d'humidité relative"
+)
 
-with st.sidebar:
-    st.title("⚙️ Paramètres")
-    st.markdown("---")
-    
-    st.subheader("📍 Quartier à analyser")
-    selected_quartier = st.selectbox(
-        "Choisissez un quartier",
-        options=data['quartiers'],
-        index=0,
-        key="selected_quartier_sidebar",
-        help="Sélectionnez le quartier pour la prédiction immédiate"
-    )
-    
-    st.markdown("---")
-    st.subheader("🌡️ Conditions Météorologiques")
-    
-    temperature = st.slider("Température (°C)", 15.0, 40.0, 25.0, 0.5, key="temp_slider")
-    humidite = st.slider("Humidité (%)", 30.0, 100.0, 65.0, 1.0, key="hum_slider")
-    vent = st.slider("Vitesse du vent (km/h)", 0.0, 50.0, 15.0, 0.5, key="vent_slider")
-    
-    st.markdown("---")
-    st.subheader("⚡ Consommation Électrique")
-    consommation = st.slider("Consommation (MW)", 200.0, 1500.0, 800.0, 10.0, key="conso_slider")
-    
-    st.markdown("---")
-    predict_button = st.button("🔮 Lancer la Prédiction", type="primary", use_container_width=True)
-    
-    st.markdown("---")
-    with st.expander("ℹ️ À propos"):
-        st.markdown(f"""
-        **Dakar Power Prediction**
-        
-        Application de prédiction des coupures d'électricité à Dakar utilisant :
-        - 🌳 LightGBM (Machine Learning)
-        - 🧠 LSTM (Deep Learning)
-        - 🗄️ Base de données MySQL
-        
-        **Seuils de risque :**
-        - 🟢 Faible : < {THRESHOLD_MODERATE*100:.0f}%
-        - 🟠 Modéré : {THRESHOLD_MODERATE*100:.0f}% - {THRESHOLD_HIGH*100:.0f}%
-        - 🔴 Élevé : > {THRESHOLD_HIGH*100:.0f}%
-        """)
+vitesse_vent = st.sidebar.slider(
+    "Vitesse du vent (km/h)",
+    min_value=0.0,
+    max_value=50.0,
+    value=15.0,
+    step=1.0,
+    help="Vitesse moyenne du vent"
+)
 
-# ====================================
+# Consommation électrique
+st.sidebar.subheader("⚡ Consommation Électrique")
+
+consommation = st.sidebar.slider(
+    "Consommation (MW)",
+    min_value=200.0,
+    max_value=1500.0,
+    value=800.0,
+    step=10.0,
+    help="Consommation électrique estimée"
+)
+
+# Bouton de prédiction
+st.sidebar.markdown("---")
+predict_button = st.sidebar.button("🔮 Lancer la Prédiction", type="primary")
+
+# Informations
+st.sidebar.markdown("---")
+st.sidebar.info("""
+ℹ️ **À propos**
+
+Ce système utilise :
+- 🤖 **LightGBM** : Algorithme de boosting
+- 🧠 **LSTM** : Réseau de neurones récurrent
+- 🗺️ **6 quartiers** de Dakar analysés
+- 📊 **Données temps réel** sauvegardées dans Supabase
+""")
+
+# ================================================================
 # TABS PRINCIPAUX
-# ====================================
+# ================================================================
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "🎯 Prédiction Immédiate",
@@ -269,387 +203,454 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📈 Historique & Tendances"
 ])
 
-# ====================================
-# FONCTION D'AFFICHAGE
-# ====================================
-
-def display_single_prediction(result, quartier):
-    """Affiche les résultats détaillés de la prédiction."""
-    st.success("✅ Prédiction effectuée avec succès !")
-    
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col1:
-        st.metric(
-            label=f"🎯 Probabilité de Coupure - {quartier}",
-            value=format_percentage(result['proba_moyenne']),
-            delta=f"{result['statut']} {result['emoji']}",
-            delta_color="off"
-        )
-    
-    with col2:
-        st.metric(
-            label="🌳 LightGBM",
-            value=format_percentage(result['proba_lgbm']),
-            help=f"Seuil de décision : {result['seuil_lgbm']:.3f}"
-        )
-    
-    with col3:
-        if result['lstm_utilisable']:
-            value_lstm = format_percentage(result['proba_lstm'])
-            help_text = f"Seuil de décision : {result['seuil_lstm']:.3f}"
-        else:
-            value_lstm = "N/A"
-            help_text = "Historique insuffisant pour LSTM (moins de 24h)"
-        
-        st.metric(label="🧠 LSTM", value=value_lstm, help=help_text)
-    
-    st.markdown("---")
-    
-    fig_gauge = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=result['proba_moyenne'] * 100,
-        domain={'x': [0, 1], 'y': [0, 1]},
-        title={'text': "Niveau de Risque (%)", 'font': {'size': 24}},
-        delta={'reference': THRESHOLD_MODERATE * 100},
-        gauge={
-            'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': result['color']},
-            'bgcolor': "white",
-            'borderwidth': 2,
-            'bordercolor': "gray",
-            'steps': [
-                {'range': [0, THRESHOLD_MODERATE * 100], 'color': 'lightgreen'},
-                {'range': [THRESHOLD_MODERATE * 100, THRESHOLD_HIGH * 100], 'color': 'lightyellow'},
-                {'range': [THRESHOLD_HIGH * 100, 100], 'color': 'lightcoral'}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': result['proba_moyenne'] * 100
-            }
-        }
-    ))
-    
-    fig_gauge.update_layout(height=400)
-    st.plotly_chart(fig_gauge, width='stretch')
-
-# ====================================
+# ================================================================
 # TAB 1 : PRÉDICTION IMMÉDIATE
-# ====================================
+# ================================================================
 
 with tab1:
     st.header("🎯 Prédiction Immédiate")
     
     if predict_button:
-        is_valid, error_msg = validate_input(temperature, humidite, vent, consommation)
-        
-        if not is_valid:
-            st.error(error_msg)
-            st.session_state['last_prediction_result'] = None
-        else:
-            with st.spinner(f"🔄 Calcul de la prédiction pour {selected_quartier} en cours..."):
-                input_data = {
-                    'temperature': temperature,
-                    'humidite': humidite,
-                    'vent': vent,
-                    'consommation': consommation
-                }
+        with st.spinner("🔄 Calcul de la prédiction en cours..."):
+            # Créer les features temporelles
+            now = datetime.now()
+            temp_features = create_time_features(now)
+            
+            # Faire la prédiction
+            result = make_prediction_single(
+                models=models,
+                quartier=quartier,
+                temperature=temperature,
+                humidite=humidite,
+                vitesse_vent=vitesse_vent,
+                consommation=consommation,
+                temp_features=temp_features
+            )
+            
+            if result:
+                pred_lgb, pred_lstm, risque_global = result
                 
-                historical_data = get_historical_data(data['db'], quartier=selected_quartier, hours=24)
-                
+                # Sauvegarder dans Supabase
                 try:
-                    result = make_prediction_single(
-                        input_data,
-                        selected_quartier,
-                        data['lgbm_model'],
-                        data['lgbm_threshold'],
-                        data['lstm_model'],
-                        data['lstm_threshold'],
-                        data['scaler'],
-                        data['label_encoder'],
-                        historical_data
+                    db.save_prediction(
+                        quartier=quartier,
+                        temp=temperature,
+                        hum=humidite,
+                        vent=vitesse_vent,
+                        conso=consommation,
+                        pred_lgb=pred_lgb,
+                        pred_lstm=pred_lstm,
+                        risque_global=risque_global
                     )
-                    
-                    st.session_state['last_prediction_result'] = result
-                    st.session_state['last_prediction_quartier'] = selected_quartier
-                    
-                    display_single_prediction(result, selected_quartier)
-                    
-                    if data['db'] is not None:
-                        try:
-                            prediction_data = {
-                                'date_heure': datetime.now(),
-                                'quartier': selected_quartier,
-                                'temp_celsius': temperature,
-                                'humidite_percent': humidite,
-                                'vitesse_vent': vent,
-                                'conso_megawatt': consommation,
-                                'proba_lgbm': result['proba_lgbm'],
-                                'proba_lstm': result['proba_lstm'],
-                                'proba_moyenne': result['proba_moyenne'],
-                                'prediction': 1 if result['proba_moyenne'] >= THRESHOLD_MODERATE else 0,
-                                'modele_utilise': 'ensemble' if result['lstm_utilisable'] else 'lgbm_only',
-                                'seuil_decision': THRESHOLD_MODERATE
-                            }
-                            pred_id = save_prediction_to_db(data['db'], prediction_data)
-                            if pred_id:
-                                st.info(f"💾 Prédiction #{pred_id} sauvegardée dans la base de données")
-                        except Exception as e:
-                            st.warning(f"⚠️ Impossible de sauvegarder la prédiction: {e}")
-                            
                 except Exception as e:
-                    st.error(f"❌ Erreur lors de la prédiction : {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
+                    st.warning(f"⚠️ Prédiction réussie mais non sauvegardée : {e}")
+                
+                # Afficher la jauge de risque
+                st.subheader(f"📍 Résultat pour {quartier}")
+                
+                fig_gauge = create_gauge_chart(risque_global, quartier)
+                st.plotly_chart(fig_gauge, width='stretch')
+                
+                # Métriques détaillées
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        label="🤖 Prédiction LightGBM",
+                        value=f"{pred_lgb:.1f}%",
+                        delta=f"{pred_lgb - 50:.1f}% vs moyenne"
+                    )
+                
+                with col2:
+                    st.metric(
+                        label="🧠 Prédiction LSTM",
+                        value=f"{pred_lstm:.1f}%",
+                        delta=f"{pred_lstm - 50:.1f}% vs moyenne"
+                    )
+                
+                with col3:
+                    risk_level = get_risk_level(risque_global)
+                    st.metric(
+                        label="⚠️ Niveau de Risque",
+                        value=risk_level,
+                        delta=f"{risque_global:.1f}%"
+                    )
+                
+                # Interprétation
+                st.markdown("---")
+                st.subheader("💡 Interprétation")
+                
+                if risque_global < SEUILS_RISQUE['faible']:
+                    st.success(f"""
+                    ✅ **Risque FAIBLE** ({risque_global:.1f}%)
+                    
+                    Les conditions actuelles sont favorables. Risque de coupure très faible.
+                    """)
+                elif risque_global < SEUILS_RISQUE['moyen']:
+                    st.warning(f"""
+                    ⚠️ **Risque MOYEN** ({risque_global:.1f}%)
+                    
+                    Conditions à surveiller. Une vigilance est recommandée.
+                    """)
+                else:
+                    st.error(f"""
+                    🚨 **Risque ÉLEVÉ** ({risque_global:.1f}%)
+                    
+                    Conditions critiques ! Risque important de coupure d'électricité.
+                    """)
+                
+                # Facteurs contributifs
+                st.markdown("---")
+                st.subheader("📊 Conditions Actuelles")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown(f"""
+                    **🌡️ Météo :**
+                    - Température : {temperature}°C
+                    - Humidité : {humidite}%
+                    - Vent : {vitesse_vent} km/h
+                    """)
+                
+                with col2:
+                    st.markdown(f"""
+                    **⚡ Électricité :**
+                    - Consommation : {consommation} MW
+                    - Quartier : {quartier}
+                    - Heure : {now.strftime('%H:%M')}
+                    """)
+            
+            else:
+                st.error("❌ Erreur lors de la prédiction. Vérifiez les paramètres.")
     
-    elif st.session_state['last_prediction_result'] is not None:
-        display_single_prediction(st.session_state['last_prediction_result'], st.session_state['last_prediction_quartier'])
     else:
-        st.info("👈 Configurez les paramètres dans la barre latérale et cliquez sur **'Lancer la Prédiction'**")
+        st.info("👈 Configurez les paramètres dans la barre latérale et cliquez sur 'Lancer la Prédiction'")
         
-        st.markdown("### 📋 Exemple de conditions")
-        example_col1, example_col2 = st.columns(2)
+        # Exemples de conditions
+        st.markdown("---")
+        st.subheader("📋 Exemple de conditions")
         
-        with example_col1:
+        col1, col2 = st.columns(2)
+        
+        with col1:
             st.markdown("""
             **Conditions normales :**
-            * Température : 25°C
-            * Humidité : 65%
-            * Vent : 15 km/h
-            * Consommation : 800 MW
+            - 🌡️ Température : 25°C
+            - 💧 Humidité : 65%
+            - 🌬️ Vent : 15 km/h
+            - ⚡ Consommation : 800 MW
             """)
         
-        with example_col2:
+        with col2:
             st.markdown("""
             **Conditions à risque :**
-            * Température : 38°C (canicule)
-            * Humidité : 85%
-            * Vent : 45 km/h (tempête)
-            * Consommation : 1200 MW (surcharge)
+            - 🌡️ Température : 38°C (canicule)
+            - 💧 Humidité : 85%
+            - 🌬️ Vent : 45 km/h (tempête)
+            - ⚡ Consommation : 1200 MW (surcharge)
             """)
 
-# ====================================
+# ================================================================
 # TAB 2 : CARTE INTERACTIVE
-# ====================================
+# ================================================================
 
 with tab2:
-    st.header("🗺️ Carte Interactive des Risques")
+    st.header("🗺️ Carte Interactive")
     
-    col_header1, col_header2 = st.columns([4, 1])
-    with col_header2:
-        refresh_button = st.button("🔄 Rafraîchir", key="refresh_map", type="secondary", use_container_width=True)
+    if predict_button or st.button("🔄 Calculer pour tous les quartiers", key="map_calc"):
+        with st.spinner("🔄 Calcul des prédictions pour tous les quartiers..."):
+            now = datetime.now()
+            temp_features = create_time_features(now)
+            
+            predictions_data = []
+            
+            for q in QUARTIERS_DAKAR:
+                result = make_prediction_single(
+                    models=models,
+                    quartier=q,
+                    temperature=temperature,
+                    humidite=humidite,
+                    vitesse_vent=vitesse_vent,
+                    consommation=consommation,
+                    temp_features=temp_features
+                )
+                
+                if result:
+                    pred_lgb, pred_lstm, risque_global = result
+                    predictions_data.append({
+                        'Quartier': q,
+                        'LightGBM': pred_lgb,
+                        'LSTM': pred_lstm,
+                        'Risque Global': risque_global,
+                        'Niveau': get_risk_level(risque_global)
+                    })
+                    
+                    # Sauvegarder dans Supabase
+                    try:
+                        db.save_prediction(
+                            quartier=q,
+                            temp=temperature,
+                            hum=humidite,
+                            vent=vitesse_vent,
+                            conso=consommation,
+                            pred_lgb=pred_lgb,
+                            pred_lstm=pred_lstm,
+                            risque_global=risque_global
+                        )
+                    except:
+                        pass  # Silencieux pour ne pas bloquer l'affichage
+            
+            if predictions_data:
+                df_predictions = pd.DataFrame(predictions_data)
+                
+                # Carte interactive
+                fig_map = create_risk_map(df_predictions)
+                st.plotly_chart(fig_map, width='stretch')
+                
+                # Tableau des résultats
+                st.markdown("---")
+                st.subheader("📊 Résultats par Quartier")
+                
+                # Formater le dataframe
+                df_display = df_predictions.copy()
+                df_display['LightGBM'] = df_display['LightGBM'].apply(lambda x: f"{x:.1f}%")
+                df_display['LSTM'] = df_display['LSTM'].apply(lambda x: f"{x:.1f}%")
+                df_display['Risque Global'] = df_display['Risque Global'].apply(lambda x: f"{x:.1f}%")
+                
+                st.dataframe(df_display, width='stretch', hide_index=True)
+                
+                # Statistiques globales
+                st.markdown("---")
+                st.subheader("📈 Statistiques Globales")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    risque_moyen = df_predictions['Risque Global'].mean()
+                    st.metric("Risque Moyen", f"{risque_moyen:.1f}%")
+                
+                with col2:
+                    risque_max = df_predictions['Risque Global'].max()
+                    quartier_max = df_predictions.loc[df_predictions['Risque Global'].idxmax(), 'Quartier']
+                    st.metric("Risque Maximum", f"{risque_max:.1f}%", delta=quartier_max)
+                
+                with col3:
+                    nb_critique = len(df_predictions[df_predictions['Risque Global'] >= SEUILS_RISQUE['eleve']])
+                    st.metric("Quartiers Critiques", nb_critique)
+                
+                with col4:
+                    nb_securise = len(df_predictions[df_predictions['Risque Global'] < SEUILS_RISQUE['faible']])
+                    st.metric("Quartiers Sécurisés", nb_securise)
     
-    run_id = f"{temperature}_{humidite}_{vent}_{consommation}"
-    
-    st.markdown(f"""
-    <div class="debug-box">
-        <strong>🔍 Conditions actuelles utilisées pour les prédictions :</strong><br>
-        🌡️ Température : <strong>{temperature}°C</strong> | 
-        💧 Humidité : <strong>{humidite}%</strong> | 
-        💨 Vent : <strong>{vent} km/h</strong> | 
-        ⚡ Consommation : <strong>{consommation} MW</strong>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    with st.spinner("🔄 Calcul des prédictions en temps réel pour tous les quartiers..."):
-        quartiers_data = get_predictions_for_all_quartiers(
-            temperature, humidite, vent, consommation,
-            data, data['quartiers'], run_id
-        )
-        
-        df_map = pd.DataFrame(quartiers_data)
-        
-        fig_map = px.scatter_mapbox(
-            df_map,
-            lat='Latitude',
-            lon='Longitude',
-            size='Probabilité',
-            color='Probabilité',
-            hover_name='Quartier',
-            hover_data={
-                'Probabilité': ':.2%',
-                'Statut': True,
-                'LightGBM': ':.2%',
-                'LSTM': ':.2%',
-                'Latitude': False,
-                'Longitude': False
-            },
-            color_continuous_scale='RdYlGn_r',
-            size_max=30,
-            zoom=11,
-            center={'lat': MAP_CENTER['lat'], 'lon': MAP_CENTER['lon']},
-            mapbox_style='open-street-map',
-            title=f"Risque de Coupure par Quartier (Temp: {temperature}°C, Conso: {consommation}MW)"
-        )
-        
-        fig_map.update_layout(
-            height=600,
-            margin={"r": 0, "t": 50, "l": 0, "b": 0},
-            coloraxis_colorbar=dict(title="Probabilité", tickformat='.0%')
-        )
-        
-        st.plotly_chart(fig_map, width='stretch')
-        
-        st.markdown("### 📊 Récapitulatif par Quartier")
-        
-        df_display = df_map.copy()
-        df_display = df_display.sort_values('Probabilité', ascending=False)
-        
-        df_display['Probabilité'] = df_display['Probabilité'].apply(lambda x: f"{x*100:.2f}%")
-        df_display['LightGBM'] = df_display['LightGBM'].apply(lambda x: f"{x*100:.2f}%")
-        df_display['LSTM'] = df_display['LSTM'].apply(lambda x: f"{x*100:.2f}%" if x > 0.001 else "N/A")
-        
-        df_display = df_display[['Quartier', 'Probabilité', 'Statut', 'LightGBM', 'LSTM']]
-        
-        st.dataframe(df_display, width='stretch', hide_index=True)
-        
-        st.info(f"💡 **Prédictions calculées en temps réel** | Dernière mise à jour : {datetime.now().strftime('%H:%M:%S')}")
+    else:
+        st.info("👈 Cliquez sur 'Calculer pour tous les quartiers' ou lancez une prédiction dans la sidebar")
 
-# ====================================
+# ================================================================
 # TAB 3 : ANALYSE PAR QUARTIER
-# ====================================
+# ================================================================
 
 with tab3:
     st.header("📊 Analyse par Quartier")
     
-    if data['db'] is not None:
-        with st.spinner("📊 Chargement des statistiques historiques..."):
-            stats_df = get_statistics_by_quartier(data['db'])
-            
-            if not stats_df.empty:
-                fig_bar = px.bar(
-                    stats_df.sort_values('taux_coupure', ascending=False),
-                    x='quartier',
-                    y='taux_coupure',
-                    title="Taux de Coupure Historique par Quartier (Basé sur les données enregistrées)",
-                    labels={'taux_coupure': 'Taux de Coupure (%)', 'quartier': 'Quartier'},
-                    color='taux_coupure',
-                    color_continuous_scale='Reds',
-                    text='taux_coupure'
-                )
-                
-                fig_bar.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
-                fig_bar.update_layout(height=400, showlegend=False, xaxis={'categoryorder': 'total descending'})
-                
-                st.plotly_chart(fig_bar, width='stretch')
-                
-                st.markdown("### 📋 Statistiques Détaillées")
-                
-                stats_display = stats_df.copy()
-                stats_display['taux_coupure'] = stats_display['taux_coupure'].apply(lambda x: f"{x:.2f}%")
-                stats_display['temp_moyenne'] = stats_display['temp_moyenne'].apply(lambda x: f"{x:.1f}°C")
-                stats_display['conso_moyenne'] = stats_display['conso_moyenne'].apply(lambda x: f"{x:.1f} MW")
-                stats_display.columns = ['Quartier', 'Total Enregistrements', 'Total Coupures', 'Taux Coupure', 'Temp. Moyenne', 'Conso. Moyenne']
-                
-                st.dataframe(stats_display, width='stretch', hide_index=True)
-            else:
-                st.warning("⚠️ Aucune donnée statistique disponible dans la base de données.")
+    # Récupérer les statistiques depuis Supabase
+    stats_quartiers = db.get_quartier_stats()
+    
+    if not stats_quartiers.empty:
+        st.subheader("📈 Statistiques Cumulées")
+        
+        # Formater le dataframe
+        stats_display = stats_quartiers.copy()
+        stats_display['taux_risque'] = stats_display['taux_risque'].apply(lambda x: f"{x:.1f}%")
+        stats_display['derniere_maj'] = pd.to_datetime(stats_display['derniere_maj']).dt.strftime('%Y-%m-%d %H:%M')
+        
+        stats_display.columns = ['Quartier', 'Total Prédictions', 'Coupures Prédites', 'Taux de Risque', 'Dernière MAJ']
+        
+        st.dataframe(stats_display, width='stretch', hide_index=True)
+        
+        # Graphiques
+        st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Graphique en barres - Total prédictions
+            fig_bar = px.bar(
+                stats_quartiers,
+                x='quartier',
+                y='total_predictions',
+                title="Nombre de Prédictions par Quartier",
+                labels={'quartier': 'Quartier', 'total_predictions': 'Nombre de Prédictions'},
+                color='total_predictions',
+                color_continuous_scale='Blues'
+            )
+            fig_bar.update_layout(showlegend=False)
+            st.plotly_chart(fig_bar, width='stretch')
+        
+        with col2:
+            # Graphique en barres - Taux de risque
+            fig_risk = px.bar(
+                stats_quartiers,
+                x='quartier',
+                y='taux_risque',
+                title="Taux de Risque par Quartier",
+                labels={'quartier': 'Quartier', 'taux_risque': 'Taux de Risque (%)'},
+                color='taux_risque',
+                color_continuous_scale='Reds'
+            )
+            fig_risk.update_layout(showlegend=False)
+            st.plotly_chart(fig_risk, width='stretch')
+        
     else:
-        st.error("❌ Base de données non disponible. Impossible de charger les statistiques.")
+        st.info("📊 Aucune statistique disponible. Lancez quelques prédictions pour générer des données !")
 
-# ====================================
+# ================================================================
 # TAB 4 : HISTORIQUE & TENDANCES
-# ====================================
+# ================================================================
 
 with tab4:
     st.header("📈 Historique & Tendances")
     
-    if data['db'] is not None:
-        quartier_histo = st.selectbox(
-            "Sélectionnez un quartier pour l'historique",
-            options=data['quartiers'],
-            key='quartier_histo'
+    # Sélection de la période
+    col1, col2, col3 = st.columns([2, 2, 1])
+    
+    with col1:
+        start_date = st.date_input(
+            "Date de début",
+            value=datetime.now() - timedelta(days=7),
+            max_value=datetime.now()
         )
+    
+    with col2:
+        end_date = st.date_input(
+            "Date de fin",
+            value=datetime.now(),
+            max_value=datetime.now()
+        )
+    
+    with col3:
+        quartier_filter = st.selectbox(
+            "Quartier",
+            ["Tous"] + QUARTIERS_DAKAR
+        )
+    
+    # Récupérer l'historique
+    df_historique = db.get_recent_predictions(limit=1000)
+    
+    if not df_historique.empty:
+        # Filtrer par date
+        df_historique['date_heure'] = pd.to_datetime(df_historique['date_heure'])
+        mask = (df_historique['date_heure'].dt.date >= start_date) & (df_historique['date_heure'].dt.date <= end_date)
+        df_filtered = df_historique[mask]
         
-        col_period1, col_period2 = st.columns(2)
-        with col_period1:
-            hours_back = st.slider("Heures d'historique à afficher (Max 1 semaine)", 24, 168, 168, 24)
+        # Filtrer par quartier si nécessaire
+        if quartier_filter != "Tous":
+            df_filtered = df_filtered[df_filtered['quartier'] == quartier_filter]
         
-        with st.spinner(f"📊 Chargement de {hours_back}h d'historique pour {quartier_histo}..."):
-            hist_df = get_historical_data(data['db'], quartier=quartier_histo, hours=hours_back)
+        if not df_filtered.empty:
+            # Métriques de la période
+            st.subheader("📊 Métriques de la Période")
             
-            if not hist_df.empty:
-                fig_hist = go.Figure()
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Prédictions", len(df_filtered))
+            
+            with col2:
+                risque_moyen = df_filtered['risque_global'].mean()
+                st.metric("Risque Moyen", f"{risque_moyen:.1f}%")
+            
+            with col3:
+                nb_critique = len(df_filtered[df_filtered['risque_global'] >= SEUILS_RISQUE['eleve']])
+                pct_critique = (nb_critique / len(df_filtered)) * 100
+                st.metric("Alertes Critiques", f"{nb_critique} ({pct_critique:.1f}%)")
+            
+            with col4:
+                temp_moy = df_filtered['temperature'].mean()
+                st.metric("Temp. Moyenne", f"{temp_moy:.1f}°C")
+            
+            # Graphique d'évolution temporelle
+            st.markdown("---")
+            st.subheader("📈 Évolution du Risque")
+            
+            fig_evolution = px.line(
+                df_filtered,
+                x='date_heure',
+                y='risque_global',
+                color='quartier' if quartier_filter == "Tous" else None,
+                title="Évolution du Risque de Coupure",
+                labels={
+                    'date_heure': 'Date et Heure',
+                    'risque_global': 'Risque (%)',
+                    'quartier': 'Quartier'
+                }
+            )
+            
+            # Ajouter les seuils
+            fig_evolution.add_hline(y=SEUILS_RISQUE['faible'], line_dash="dash", line_color="green", annotation_text="Seuil Faible")
+            fig_evolution.add_hline(y=SEUILS_RISQUE['moyen'], line_dash="dash", line_color="orange", annotation_text="Seuil Moyen")
+            fig_evolution.add_hline(y=SEUILS_RISQUE['eleve'], line_dash="dash", line_color="red", annotation_text="Seuil Élevé")
+            
+            st.plotly_chart(fig_evolution, width='stretch')
+            
+            # Tableau des dernières prédictions
+            st.markdown("---")
+            st.subheader("📋 Dernières Prédictions")
+            
+            # Formater le dataframe
+            df_display = df_filtered.tail(50).copy()
+            df_display['date_heure'] = df_display['date_heure'].dt.strftime('%Y-%m-%d %H:%M')
+            df_display['temperature'] = df_display['temperature'].apply(lambda x: f"{x:.1f}°C")
+            df_display['humidite'] = df_display['humidite'].apply(lambda x: f"{x:.0f}%")
+            df_display['vitesse_vent'] = df_display['vitesse_vent'].apply(lambda x: f"{x:.0f} km/h")
+            df_display['consommation'] = df_display['consommation'].apply(lambda x: f"{x:.0f} MW")
+            df_display['risque_global'] = df_display['risque_global'].apply(lambda x: f"{x:.1f}%")
+            
+            df_display = df_display[['date_heure', 'quartier', 'temperature', 'humidite', 'vitesse_vent', 'consommation', 'risque_global']]
+            df_display.columns = ['Date/Heure', 'Quartier', 'Temp.', 'Hum.', 'Vent', 'Conso.', 'Risque']
+            
+            st.dataframe(df_display, width='stretch', hide_index=True)
+            
+            # Heatmap des risques par jour et quartier
+            if quartier_filter == "Tous" and len(df_filtered) > 10:
+                st.markdown("---")
+                st.subheader("🗓️ Heatmap des Risques")
                 
-                fig_hist.add_trace(go.Scatter(
-                    x=hist_df['date_heure'],
-                    y=hist_df['conso_megawatt'],
-                    name='Consommation (MW)',
-                    line=dict(color='blue', width=2),
-                    yaxis='y1'
+                # Préparer les données
+                df_filtered['date'] = df_filtered['date_heure'].dt.date
+                heatmap_data = df_filtered.groupby(['date', 'quartier'])['risque_global'].mean().reset_index()
+                heatmap_pivot = heatmap_data.pivot(index='quartier', columns='date', values='risque_global')
+                
+                fig_heatmap = go.Figure(data=go.Heatmap(
+                    z=heatmap_pivot.values,
+                    x=[str(d) for d in heatmap_pivot.columns],
+                    y=heatmap_pivot.index,
+                    colorscale='RdYlGn_r',
+                    colorbar=dict(title="Risque (%)")
                 ))
                 
-                fig_hist.add_trace(go.Scatter(
-                    x=hist_df['date_heure'],
-                    y=hist_df['temp_celsius'],
-                    name='Température (°C)',
-                    yaxis='y2',
-                    line=dict(color='orange', width=2, dash='dot')
-                ))
-                
-                coupures_df = hist_df[hist_df['coupure'] == 1]
-                if not coupures_df.empty:
-                    fig_hist.add_trace(go.Scatter(
-                        x=coupures_df['date_heure'],
-                        y=coupures_df['conso_megawatt'],
-                        mode='markers',
-                        name='Coupure Réelle',
-                        marker=dict(color='red', size=10, symbol='x'),
-                        yaxis='y1'
-                    ))
-                
-                fig_hist.update_layout(
-                    title=f"Historique Récent - {quartier_histo}",
-                    xaxis_title="Date et Heure",
-                    yaxis=dict(
-                        title="Consommation (MW)",
-                        titlefont=dict(color='blue'),
-                        tickfont=dict(color='blue')
-                    ),
-                    yaxis2=dict(
-                        title="Température (°C)",
-                        titlefont=dict(color='orange'),
-                        tickfont=dict(color='orange'),
-                        overlaying='y',
-                        side='right'
-                    ),
-                    height=500,
-                    hovermode='x unified'
+                fig_heatmap.update_layout(
+                    title="Risque Moyen par Jour et Quartier",
+                    xaxis_title="Date",
+                    yaxis_title="Quartier"
                 )
                 
-                st.plotly_chart(fig_hist, width='stretch')
-                
-                st.markdown("### 🔍 Statistiques de la Période Sélectionnée")
-                col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                
-                with col_stat1:
-                    st.metric("📊 Enregistrements", len(hist_df))
-                
-                with col_stat2:
-                    nb_coupures = hist_df['coupure'].sum()
-                    st.metric("⚡ Coupures (enregistrées)", int(nb_coupures))
-                
-                with col_stat3:
-                    taux = hist_df['coupure'].mean() * 100
-                    st.metric("📈 Taux de Coupure", f"{taux:.2f}%")
-                
-                with col_stat4:
-                    temp_moy = hist_df['temp_celsius'].mean()
-                    st.metric("🌡️ Temp. Moy. (période)", f"{temp_moy:.1f}°C")
-            else:
-                st.warning(f"⚠️ Aucune donnée historique disponible pour {quartier_histo} sur les dernières {hours_back} heures.")
+                st.plotly_chart(fig_heatmap, width='stretch')
+        
+        else:
+            st.info("📊 Aucune donnée pour la période sélectionnée")
+    
     else:
-        st.error("❌ Base de données non disponible. Impossible de charger l'historique.")
+        st.info("📊 Aucun historique disponible. Lancez quelques prédictions pour générer des données !")
 
-# ====================================
+# ================================================================
 # FOOTER
-# ====================================
+# ================================================================
 
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: gray; padding: 1rem;'>
-    <p>⚡ <strong>Dakar Power Prediction</strong> | Développé avec Streamlit, LightGBM, LSTM & MySQL</p>
-    <p>📊 Données: 52,704 enregistrements | 🏘️ Quartiers: 6</p>
+<div style="text-align: center; color: #666; padding: 1rem;">
+    <p><strong>⚡ Dakar Power Prediction</strong> | Développé avec Streamlit, LightGBM, LSTM & Supabase</p>
+    <p>📊 Données stockées dans Supabase (PostgreSQL) | 🏘️ Quartiers: 6 | 🤖 Modèles: LightGBM + LSTM</p>
 </div>
 """, unsafe_allow_html=True)

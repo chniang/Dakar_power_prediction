@@ -1,5 +1,3 @@
-# Dakar Power Prediction - Requirements
-
 # Core
 streamlit>=1.28.0
 pandas>=2.0.0
@@ -16,10 +14,9 @@ joblib>=1.3.0
 # Deep Learning
 tensorflow>=2.15.0
 
-# Database
-mysql-connector-python>=8.0.0
+# Database - POSTGRESQL/SUPABASE
+psycopg2-binary>=2.9.9
 sqlalchemy>=2.0.0
-pymysql>=1.1.0
 
 # Utilities
 python-dotenv>=1.0.0

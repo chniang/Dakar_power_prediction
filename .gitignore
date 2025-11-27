@@ -37,3 +37,17 @@ __pycache__/
 
 # Rapports
 📘 DOCUMENTATION CONCISE - DAKAR POWER PREDICTION.pdf
+
+# Secrets
+.streamlit/secrets.toml
+.env
+
+
+# Secrets et configurations sensibles
+.env
+.streamlit/secrets.toml
+
+# Environnement virtuel
+stable_env/
+venv/
+env/
