@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from datetime import datetime
 import streamlit as st
-from src.config import DATABASE_URL, QUARTIERS_DAKAR
+from src.config import DATABASE_URL, QUARTIERS_DAKAR 
 
 class SupabaseDB:
     """Gestionnaire de base de données Supabase"""
@@ -16,6 +16,7 @@ class SupabaseDB:
         """Initialiser la connexion à Supabase"""
         try:
             # Créer le moteur SQLAlchemy sans pool (pour Streamlit Cloud)
+            # DATABASE_URL utilise l'hôte du Pooler de sessions de Supabase
             self.engine = create_engine(
                 DATABASE_URL,
                 poolclass=NullPool,
@@ -24,41 +25,38 @@ class SupabaseDB:
                     "sslmode": "require"  # Supabase nécessite SSL
                 }
             )
-            self.test_connection()
+            if self.test_connection():
+                # Tente d'initialiser les entrées de la table stats_quartiers si elles sont manquantes
+                self._initialize_quartier_stats()
         except Exception as e:
             st.error(f"❌ Erreur connexion Supabase : {e}")
             self.engine = None
     
     def test_connection(self):
         """Tester la connexion"""
+        if not self.engine:
+            return False
+            
         try:
             with self.engine.connect() as conn:
-                result = conn.execute(text("SELECT 1"))
+                conn.execute(text("SELECT 1"))
                 st.success("✅ Connexion Supabase réussie")
                 return True
         except Exception as e:
+            # Afficher l'erreur de connexion détaillée si elle se produit
             st.error(f"❌ Test connexion échoué : {e}")
             return False
     
     def save_prediction(self, quartier, temp, hum, vent, conso, pred_lgb, pred_lstm, risque_global):
         """
-        Sauvegarder une prédiction dans la base
-        
-        Args:
-            quartier: Nom du quartier
-            temp: Température (°C)
-            hum: Humidité (%)
-            vent: Vitesse du vent (km/h)
-            conso: Consommation électrique (MW)
-            pred_lgb: Prédiction LightGBM (%)
-            pred_lstm: Prédiction LSTM (%)
-            risque_global: Risque global (%)
+        Sauvegarder une prédiction dans la table 'predictions' et mettre à jour 'stats_quartiers'.
         """
         if not self.engine:
             return False
         
         try:
-            query = text("""
+            # Insertion dans la table predictions
+            query_insert = text("""
                 INSERT INTO predictions (
                     quartier, temperature, humidite, vitesse_vent, consommation,
                     prediction_lgb, prediction_lstm, risque_global, date_heure
@@ -69,7 +67,7 @@ class SupabaseDB:
             """)
             
             with self.engine.connect() as conn:
-                conn.execute(query, {
+                conn.execute(query_insert, {
                     'quartier': quartier,
                     'temp': float(temp),
                     'hum': float(hum),
@@ -87,20 +85,30 @@ class SupabaseDB:
             return True
             
         except Exception as e:
-            st.warning(f"⚠️ Erreur sauvegarde : {e}")
+            st.warning(f"⚠️ Erreur sauvegarde (predictions) : {e}")
             return False
     
     def _update_quartier_stats(self, quartier, risque_global):
-        """Mettre à jour les statistiques d'un quartier"""
+        """Mettre à jour les statistiques d'un quartier (total_predictions, taux_risque, etc.)"""
+        if not self.engine:
+            return
+            
         try:
+            # Requête corrigée pour éviter les conflits dans les calculs UPDATE
             query = text("""
+                -- 1. Incrémenter les compteurs
                 UPDATE stats_quartiers
                 SET 
                     total_predictions = total_predictions + 1,
                     coupures_predites = coupures_predites + CASE WHEN :risque >= 50 THEN 1 ELSE 0 END,
-                    taux_risque = (coupures_predites::float / total_predictions * 100),
                     derniere_maj = :now
-                WHERE quartier = :quartier
+                WHERE quartier = :quartier;
+                
+                -- 2. Calculer le taux de risque avec les nouvelles valeurs
+                UPDATE stats_quartiers
+                SET 
+                    taux_risque = (coupures_predites::float / total_predictions * 100)
+                WHERE quartier = :quartier AND total_predictions > 0;
             """)
             
             with self.engine.connect() as conn:
@@ -111,8 +119,42 @@ class SupabaseDB:
                 })
                 conn.commit()
         except Exception as e:
-            pass  # Silencieux, pas critique
+            # Afficher le warning pour le débogage de l'UPDATE
+            st.warning(f"⚠️ Erreur mise à jour stats quartier ({quartier}): {e}") 
+            pass  
     
+    def _initialize_quartier_stats(self):
+        """Initialiser les statistiques des quartiers (si la table est vide)"""
+        if not self.engine:
+            return
+
+        try:
+            # QUARTIERS_DAKAR est une liste (selon src/config.py)
+            quartiers_list = QUARTIERS_DAKAR 
+
+            # 1. Récupérer les quartiers déjà présents dans la table
+            existing_quartiers_query = text("SELECT quartier FROM stats_quartiers")
+            
+            with self.engine.connect() as conn:
+                existing_quartiers = [row[0] for row in conn.execute(existing_quartiers_query).fetchall()]
+                
+                # 2. Identifier les quartiers manquants
+                quartiers_to_insert = [q for q in quartiers_list if q not in existing_quartiers]
+                
+                # 3. Insérer les quartiers manquants
+                if quartiers_to_insert:
+                    insert_query = text("""
+                        INSERT INTO stats_quartiers (quartier, total_predictions, coupures_predites, taux_risque, derniere_maj)
+                        VALUES (:quartier, 0, 0, 0.0, :now)
+                    """)
+                    for quartier in quartiers_to_insert:
+                        conn.execute(insert_query, {'quartier': quartier, 'now': datetime.now()})
+                    conn.commit()
+                    st.info(f"✅ Initialisation des stats de {len(quartiers_to_insert)} quartiers effectuée.")
+
+        except Exception as e:
+            st.warning(f"⚠️ Erreur initialisation stats quartiers : {e}")
+
     def get_recent_predictions(self, limit=100):
         """Récupérer les dernières prédictions"""
         if not self.engine:
@@ -176,6 +218,7 @@ class SupabaseDB:
             return pd.DataFrame()
         
         try:
+            # Le reste de vos méthodes de récupération de données...
             if quartier:
                 query = text("""
                     SELECT 
